@@ -1,14 +1,30 @@
 """Platform to control a Zehnder ComfoAir Q350/450/600 ventilation unit."""
 import logging
 
+from pycomfoconnect import (
+    SENSOR_FAN_EXHAUST_FLOW,
+    SENSOR_FAN_SUPPLY_FLOW,
+    SENSOR_HUMIDITY_EXTRACT,
+    SENSOR_HUMIDITY_OUTDOOR,
+    SENSOR_TEMPERATURE_EXTRACT,
+    SENSOR_TEMPERATURE_OUTDOOR,
+)
+
 from homeassistant.const import CONF_RESOURCES, TEMP_CELSIUS
-from homeassistant.helpers.dispatcher import dispatcher_connect
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 
 from . import (
-    ATTR_AIR_FLOW_EXHAUST, ATTR_AIR_FLOW_SUPPLY, ATTR_CURRENT_HUMIDITY,
-    ATTR_CURRENT_TEMPERATURE, ATTR_OUTSIDE_HUMIDITY, ATTR_OUTSIDE_TEMPERATURE,
-    DOMAIN, SIGNAL_COMFOCONNECT_UPDATE_RECEIVED, ComfoConnectBridge)
+    ATTR_AIR_FLOW_EXHAUST,
+    ATTR_AIR_FLOW_SUPPLY,
+    ATTR_CURRENT_HUMIDITY,
+    ATTR_CURRENT_TEMPERATURE,
+    ATTR_OUTSIDE_HUMIDITY,
+    ATTR_OUTSIDE_TEMPERATURE,
+    DOMAIN,
+    SIGNAL_COMFOCONNECT_UPDATE_RECEIVED,
+    ComfoConnectBridge,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,48 +33,44 @@ SENSOR_TYPES = {}
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the ComfoConnect fan platform."""
-    from pycomfoconnect import (
-        SENSOR_TEMPERATURE_EXTRACT, SENSOR_HUMIDITY_EXTRACT,
-        SENSOR_TEMPERATURE_OUTDOOR, SENSOR_HUMIDITY_OUTDOOR,
-        SENSOR_FAN_SUPPLY_FLOW, SENSOR_FAN_EXHAUST_FLOW)
 
     global SENSOR_TYPES
     SENSOR_TYPES = {
         ATTR_CURRENT_TEMPERATURE: [
-            'Inside Temperature',
+            "Inside Temperature",
             TEMP_CELSIUS,
-            'mdi:thermometer',
-            SENSOR_TEMPERATURE_EXTRACT
+            "mdi:thermometer",
+            SENSOR_TEMPERATURE_EXTRACT,
         ],
         ATTR_CURRENT_HUMIDITY: [
-            'Inside Humidity',
-            '%',
-            'mdi:water-percent',
-            SENSOR_HUMIDITY_EXTRACT
+            "Inside Humidity",
+            "%",
+            "mdi:water-percent",
+            SENSOR_HUMIDITY_EXTRACT,
         ],
         ATTR_OUTSIDE_TEMPERATURE: [
-            'Outside Temperature',
+            "Outside Temperature",
             TEMP_CELSIUS,
-            'mdi:thermometer',
-            SENSOR_TEMPERATURE_OUTDOOR
+            "mdi:thermometer",
+            SENSOR_TEMPERATURE_OUTDOOR,
         ],
         ATTR_OUTSIDE_HUMIDITY: [
-            'Outside Humidity',
-            '%',
-            'mdi:water-percent',
-            SENSOR_HUMIDITY_OUTDOOR
+            "Outside Humidity",
+            "%",
+            "mdi:water-percent",
+            SENSOR_HUMIDITY_OUTDOOR,
         ],
         ATTR_AIR_FLOW_SUPPLY: [
-            'Supply airflow',
-            'm³/h',
-            'mdi:air-conditioner',
-            SENSOR_FAN_SUPPLY_FLOW
+            "Supply airflow",
+            "m³/h",
+            "mdi:air-conditioner",
+            SENSOR_FAN_SUPPLY_FLOW,
         ],
         ATTR_AIR_FLOW_EXHAUST: [
-            'Exhaust airflow',
-            'm³/h',
-            'mdi:air-conditioner',
-            SENSOR_FAN_EXHAUST_FLOW
+            "Exhaust airflow",
+            "m³/h",
+            "mdi:air-conditioner",
+            SENSOR_FAN_EXHAUST_FLOW,
         ],
     }
 
@@ -69,16 +81,14 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         sensor_type = resource.lower()
 
         if sensor_type not in SENSOR_TYPES:
-            _LOGGER.warning("Sensor type: %s is not a valid sensor.",
-                            sensor_type)
+            _LOGGER.warning("Sensor type: %s is not a valid sensor", sensor_type)
             continue
 
         sensors.append(
             ComfoConnectSensor(
-                hass,
-                name="%s %s" % (ccb.name, SENSOR_TYPES[sensor_type][0]),
+                name=f"{ccb.name} {SENSOR_TYPES[sensor_type][0]}",
                 ccb=ccb,
-                sensor_type=sensor_type
+                sensor_type=sensor_type,
             )
         )
 
@@ -88,25 +98,27 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 class ComfoConnectSensor(Entity):
     """Representation of a ComfoConnect sensor."""
 
-    def __init__(self, hass, name, ccb: ComfoConnectBridge,
-                 sensor_type) -> None:
+    def __init__(self, name, ccb: ComfoConnectBridge, sensor_type) -> None:
         """Initialize the ComfoConnect sensor."""
         self._ccb = ccb
         self._sensor_type = sensor_type
         self._sensor_id = SENSOR_TYPES[self._sensor_type][3]
         self._name = name
 
-        # Register the requested sensor
-        self._ccb.comfoconnect.register_sensor(self._sensor_id)
+    async def async_added_to_hass(self):
+        """Register for sensor updates."""
+        await self.hass.async_add_executor_job(
+            self._ccb.comfoconnect.register_sensor, self._sensor_id
+        )
+        async_dispatcher_connect(
+            self.hass, SIGNAL_COMFOCONNECT_UPDATE_RECEIVED, self._handle_update
+        )
 
-        def _handle_update(var):
-            if var == self._sensor_id:
-                _LOGGER.debug('Dispatcher update for %s.', var)
-                self.schedule_update_ha_state()
-
-        # Register for dispatcher updates
-        dispatcher_connect(
-            hass, SIGNAL_COMFOCONNECT_UPDATE_RECEIVED, _handle_update)
+    def _handle_update(self, var):
+        """Handle update callbacks."""
+        if var == self._sensor_id:
+            _LOGGER.debug("Received update for %s", var)
+            self.schedule_update_ha_state()
 
     @property
     def state(self):
@@ -115,6 +127,11 @@ class ComfoConnectSensor(Entity):
             return self._ccb.data[self._sensor_id]
         except KeyError:
             return None
+
+    @property
+    def should_poll(self) -> bool:
+        """Do not poll."""
+        return False
 
     @property
     def name(self):

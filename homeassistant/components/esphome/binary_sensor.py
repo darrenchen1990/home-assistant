@@ -14,10 +14,13 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up ESPHome binary sensors based on a config entry."""
     await platform_async_setup_entry(
-        hass, entry, async_add_entities,
-        component_key='binary_sensor',
-        info_type=BinarySensorInfo, entity_type=EsphomeBinarySensor,
-        state_type=BinarySensorState
+        hass,
+        entry,
+        async_add_entities,
+        component_key="binary_sensor",
+        info_type=BinarySensorInfo,
+        entity_type=EsphomeBinarySensor,
+        state_type=BinarySensorState,
     )
 
 
@@ -40,6 +43,8 @@ class EsphomeBinarySensor(EsphomeEntity, BinarySensorDevice):
             # So in their case what's usually _availability_ is now state
             return self._entry_data.available
         if self._state is None:
+            return None
+        if self._state.missing_state:
             return None
         return self._state.state
 
